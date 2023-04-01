@@ -1,9 +1,3 @@
-# Password-Manager
+# RafaBacano's Password Manager
 
-Password manager made with python and sqlite3
-
-Program might not be working fine atm but working on it
-
-23/02/2023  
-  -Testing phase 1 
-  
+This is a password manager made with python 3.9 and sqlite3, should be working fine, if you find any formattion errors or bugs contact me.

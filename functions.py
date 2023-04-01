@@ -9,45 +9,37 @@ from dotenv import load_dotenv
 load_dotenv()
 KEY = os.getenv('KEY')
 
-con = sqlite3.connect("tutorial.db")
+salt = bcrypt.gensalt()
+con = sqlite3.connect("database.db")
 cur = con.cursor()
 f = Fernet(KEY.encode('utf-8'))
-res = cur.execute("SELECT * FROM account")
 loginstatus = False
 user_name = ''
+accountname= ''
 
 class Check:
-    def StoredUserName(
-        self,
-        username: str = ...
-        ):
-        dbname = cur.execute("SELECT username FROM account WHERE username = ?", [username])
-        if dbname != None:
-            return True
-        else:
-            return False
-
-    def StoredAccount(
-        self,
-        username: str = ...,
-        password: str = ...
-        ):
-        if self.checkName(username):
-            password = password.encode('utf-8')
-            dbpw = cur.execute("SELECT password FROM account WHERE username = ?", [username])
-            if bcrypt.checkpw(dbpw, password):
+    @staticmethod
+    def StoredUserName(username: str):
+        if (con.execute("SELECT username FROM account WHERE username = ?", [username]).fetchone()) is not None:
+            dbname = (con.execute("SELECT username FROM account WHERE username = ?", [username])).fetchone()[0]
+            if dbname == username:
                 return True
             else:
                 return False
         else:
             return False
 
-    def StoredPassword(
-        self,
-        passwordsite: str = ...
-        ):
-        info = Get.StoredPasswords()
+    @staticmethod
+    def StoredAccount(username: str, password: str):
+        if Check.StoredUserName(username):
+            dbpw = (con.execute("SELECT password FROM account WHERE username = ?", [username])).fetchone()[0]
+            return bcrypt.checkpw(password.encode('utf-8'), dbpw)
+        else:
+            return False
 
+    @staticmethod
+    def StoredPassword(passwordsite: str):
+        info = Get.StoredPasswords().split(', ')
         if passwordsite in info:
             return True
         else:
@@ -55,28 +47,25 @@ class Check:
 
 class Get:
 
-    def StoredPasswords(self):
+    @staticmethod
+    def StoredPasswords():
         global user_name
-        info = ''
-        for i in cur.execute("SELECT storedpasswords FROM account WHERE username = ?", [user_name]).fetchall()[0]:
-                info += i
-        return info.split(', ')
+        return con.execute("SELECT storedpasswords FROM account WHERE username = ?", [user_name]).fetchone()[0]
 
-    def Passwords(self):
-        info = self.StoredPasswords()
+    @staticmethod
+    def Passwords():
+        info = Get.StoredPasswords().split(', ')
         retrievedinfo = ''
         for i in range(0, len(info)-1, 2):
             retrievedinfo += info[i] + ': ' + f.decrypt(info[i+1]).decode('utf-8') + '\n'
         print(retrievedinfo)
 
-    def Password(
-        self,
-        passwordsite: str = ...
-        ):
+    @staticmethod
+    def Password(passwordsite: str):
         global user_name
         retrievedinfo = ''
-        info = self.StoredPasswords()
-        if Check.StoredPassword(user_name, passwordsite):
+        info = Get.StoredPasswords().split(', ')
+        if Check.StoredPassword( passwordsite):
             for i in range(0, len(info)-1, 2):
                 if passwordsite == info[i]:
                     retrievedinfo += info[i] + ': ' + f.decrypt(info[i+1]).decode('utf-8')
@@ -87,47 +76,37 @@ class Get:
 class Modify:
 
     class Account:
-        def RegisterAccount(
-            self,
-            name: str = ...,
-            username: str = ..., 
-            password: str = ...
-            ):
+        @staticmethod
+        def RegisterAccount(name: str, username: str, password: str):
             if Check.StoredUserName(username):
                 print('Name already in Use.')
                 return 'error'
             else:
-                cur.execute("INSERT INTO account VALUES(?, ?, ?, ?)", [name, username, bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()), ''])
+                con.execute("INSERT INTO account VALUES(?, ?, ?, ?)", [name, username, bcrypt.hashpw(password.encode('utf-8'), salt), ''])
                 con.commit()
                 print('Registered successfully.')
                 return 'success'
 
-        def AccountName(
-            self,
-            newname: str = ...
-            ):
+        @staticmethod
+        def AccountName(newname: str):
             global user_name
             cur.execute("UPDATE account SET name = ? WHERE username = ?", [newname, user_name])
             con.commit()
             print('Name changed successfully.')
             return 'success'
 
-        def AccountPassword(
-            self,
-            newpassword: str = ...
-            ):
+        @staticmethod
+        def AccountPassword(newpassword: str):
             global user_name
-            cur.execute("UPDATE account SET password = ? WHERE username = ?", [newpassword, user_name])
+            cur.execute("UPDATE account SET password = ? WHERE username = ?", [bcrypt.hashpw(newpassword.encode('utf-8'), salt), user_name])
             con.commit()
             print('Password changed successfully.')
             return 'success'
 
     class List:
-        def newPassword(
-            self,
-            passwordsite: str = ...,
-            password: str = ...
-            ):
+
+        @staticmethod
+        def newPassword(passwordsite: str,password: str):
             global user_name
             if Check.StoredPassword(passwordsite):
                 print('Password already stored.')
@@ -135,19 +114,20 @@ class Modify:
             else:
                 ecpw = f.encrypt(password.encode('utf-8'))
                 info = Get.StoredPasswords()
-                info += passwordsite + ', ' + str(ecpw.decode('utf-8')) + ', '
-                cur.execute("UPDATE account SET storedpasswords = ? WHERE username = ?", [info, user_name])
+                if len(info) < 6:
+                    info += passwordsite + ', ' + str(ecpw.decode('utf-8'))
+                else:
+                    info += ', ' + passwordsite + ', ' + str(ecpw.decode('utf-8'))
+                con.execute("UPDATE account SET storedpasswords = ? WHERE username = ?", (info, user_name))
                 con.commit()
                 print('Password for ' + passwordsite + ' added successfully.')
                 return 'success'
 
-        def removePassword(
-            self,
-            passwordsite: str = ...
-            ):
+        @staticmethod
+        def removePassword(passwordsite: str):
             global user_name
             if Check.StoredPassword(passwordsite):
-                info = Get.StoredPasswords()
+                info = Get.StoredPasswords().split(', ')
                 retrievedinfo = ''
                 for i in range(0, len(info)-1, 2):
                     if passwordsite != info[i]:
@@ -160,14 +140,11 @@ class Modify:
                 print('Password for ' + passwordsite + ' doesnt exist.')
                 return 'error'
 
-        def changePassword(
-            self,
-            passwordsite: str = ...,
-            password: str = ...
-            ):
+        @staticmethod
+        def changePassword(passwordsite: str, password: str):
             global user_name
             if Check.StoredPassword(passwordsite):
-                info = Get.StoredPasswords()
+                info = Get.StoredPasswords().split(', ')
                 retrievedinfo = ''
                 ecpw = f.encrypt(password.encode('utf-8'))
                 for i in range(0, len(info)-1, 2):
@@ -179,11 +156,13 @@ class Modify:
                 print('Password for ' + passwordsite + ' changed successfully.')
                 return 'success'
             else:
-                print('You dont have' + passwordsite + ' registered.')
+                print('You dont have ' + passwordsite + ' registered.')
                 return 'error'
 
 class Window:
-    def login(self):
+
+    @staticmethod
+    def login():
         if loginstatus == True:
             print("You're already logged in.")
         else:
@@ -192,7 +171,7 @@ class Window:
             username = ''
             password = ''
             while status == 0:
-                if len(username) > 2 and len(password) > 7:
+                if len(username) >= 2 and len(password) >= 7:
                     answer = input('Login\nUsername: ' + username + '\nPassword: ' + password + '\n|Username| |Password| |Continue| |Quit| \n>')
                 else:
                     answer = input('Login\nUsername: ' + username + '\nPassword: ' + password + '\n|Username| |Password| |Quit| \n>')
@@ -201,16 +180,25 @@ class Window:
                 match answer:
                     case 'username':
                         username = Other.ask('username')
+                        os.system('cls')
 
                     case 'password':
                         password = Other.ask('password')
+                        os.system('cls')
 
                     case 'continue':
-                        if len(username) > 2 and len(password) > 7:
-                            Other.login(username, password)
-                            status = 1
-                            time.sleep(2)
-                            os.system('cls')
+                        if len(username) >= 2 and len(password) >= 7:
+                            if Other.login(username, password) == 'success':
+                                status = 1
+                                time.sleep(2)
+                                os.system('cls')
+                            else:
+                                time.sleep(1)
+                                os.system('cls') 
+                        else:
+                            print('Error, wrong input.')
+                            time.sleep(1)
+                            os.system('cls') 
 
                     case 'quit':
                         os.system('cls')
@@ -221,7 +209,8 @@ class Window:
                         time.sleep(1)
                         os.system('cls')
 
-    def register(self):
+    @staticmethod
+    def register():
         if loginstatus == True:
             print("You're already logged in.")
         else:
@@ -231,7 +220,7 @@ class Window:
             username = ''
             password = ''
             while status == 0:
-                if len(name) > 2 and len(username) > 2 and len(password) > 7:
+                if len(name) >= 2 and len(username) >= 2 and len(password) >= 7:
                     answer = input('Register\nName: ' + name + '\nUsername: ' + username + ' (Cannot be changed)\nPassword: ' + password + '\n|Name| |Username| |Password| |Continue| |Quit| \n>')
                 else:
                     answer = input('Register\nName: ' + name + '\nUsername: ' + username + ' (Cannot be changed)\nPassword: ' + password + '\n|Name| |Username| |Password| |Quit| \n>')
@@ -240,17 +229,20 @@ class Window:
                 match answer:
                     case 'username':
                         username = Other.ask('username')
+                        os.system('cls')
 
                     case 'name':
                         name = Other.ask('name')
+                        os.system('cls')
 
                     case 'password':
                         password = Other.ask('password')
+                        os.system('cls')
 
                     case 'continue':
-                        if len(name) > 2 and len(username) > 2 and len(password) > 7:
+                        if len(name) >= 2 and len(username) >= 2 and len(password) >= 7:
                             if Modify.Account.RegisterAccount(name, username, password) == 'error':
-                                time.sleep(2)
+                                time.sleep(1)
                                 os.system('cls')
                             else:
                                 status = 1
@@ -259,21 +251,23 @@ class Window:
 
                     case 'quit':
                             status = 1
+                            os.system('cls')
 
                     case _:
                         print('Error, wrong input.')
                         time.sleep(1)
                         os.system('cls')
 
-    def changeName(self):
+    @staticmethod
+    def changeName():
         os.system('cls')
         status = 0
         name = ''
         while status == 0:
             if len(name) > 3:
-                answer = input('Login\nName: ' + name + '\n|Name| |Continue| |Quit| \n>')
+                answer = input('Change Name\nName: ' + name + '\n|Name| |Continue| |Quit| \n>')
             else:
-                answer = input('Login\nName: ' + name + '\n|Name| |Quit| \n>')
+                answer = input('Change Name\nName: ' + name + '\n|Name| |Quit| \n>')
 
             answer = answer.lower()
             match answer:
@@ -295,21 +289,23 @@ class Window:
                     print('Error, wrong input.')
                     time.sleep(1)
                     os.system('cls')
-
-    def changePassword(self):
+    
+    @staticmethod
+    def changePassword():
         os.system('cls')
         status = 0
         password = ''
         while status == 0:
             if len(password) > 7:
-                answer = input('Login\nPassword: ' + password + '\n|Password| |Continue| |Quit| \n>')
+                answer = input('Change Password\nPassword: ' + password + '\n|Password| |Continue| |Quit| \n>')
             else:
-                answer = input('Login\nPassword: ' + password + '\n|Password| |Quit| \n>')
+                answer = input('Change Password\nPassword: ' + password + '\n|Password| |Quit| \n>')
 
             answer = answer.lower()
             match answer:
                 case 'password':
                     password = Other.ask('password')
+                    os.system('cls')
 
                 case 'continue':
                     if len(password) > 7:
@@ -326,29 +322,30 @@ class Window:
                     print('Error, wrong input.')
                     time.sleep(1)
                     os.system('cls')
-
-    def other(self):
+    
+    @staticmethod
+    def other():
         global loginstatus
         os.system('cls')
         status = 0
         while status == 0:
             if loginstatus == True:
-                answer = input('ChangeName - Changes the current name of the account.\n ChangePassword - Changes the current password of the account.\n RandomPass - Generates a random password for any use.\n Quit (Quits the other page)\n>')
+                answer = input('ChangeName - Changes the current name of the account.\nChangePassword - Changes the current password of the account.\nRandomPass - Generates a random password for any use.\nQuit (Quits the other page)\n>')
             else:
-                answer = input('RandomPass - Generates a random password for any use.\n Quit (Quits the other page)\n>')
+                answer = input('RandomPass - Generates a random password for any use.\nQuit (Quits the other page)\n>')
             answer = answer.lower()
 
             match answer:
                 case 'changename':
                     if loginstatus == True:
-                        self.changeName()
+                        Window.changeName()
                         status = 1
                         time.sleep(1)
                         os.system('cls')
 
                 case 'changepassword':
                     if loginstatus == True:
-                        self.changePassword()
+                        Window.changePassword()
                         status = 1
                         time.sleep(1)
                         os.system('cls')
@@ -356,7 +353,7 @@ class Window:
                 case 'randompass':
                     os.system('cls')
                     status = 1
-                    print('Randomly generated password: ' + Other.newRandomPass())
+                    print('Randomly generated password: ' + str(Other.newRandomPass()))
 
                 case 'quit':
                     os.system('cls')
@@ -366,16 +363,17 @@ class Window:
                     print('Error, wrong input.')
                     time.sleep(1)
                     os.system('cls')
-
-    def passwords(self):
-        global loginstatus, user_name
+    
+    @staticmethod
+    def passwords():
+        global loginstatus, user_name, accountname
         if loginstatus == False:
             print("You have to be logged in to do that.")
         else:
             status = 0
             while status == 0:
                 os.system('cls')
-                answer = input('Accounts - Shows the list of accounts you have registered.\n AddAccount - Register a new account to the system.\n RemoveAccount - Remove an account you have registered in the system.\n ChangePassword - Change the password from an account you have registered.\n Quit (Quits the other page)\n>')
+                answer = input('\x1B[4m' + 'Hello, '+ accountname + '\x1B[0m' + '\nAccounts - Shows the list of accounts you have registered.\nAddAccount - Register a new account to the system.\nRemoveAccount - Remove an account you have registered in the system.\nChangePassword - Change the password from an account you have registered.\nQuit (Quits the other page)\n>')
                 answer = answer.lower()
 
                 match answer:
@@ -384,7 +382,7 @@ class Window:
                         Get.Passwords()
                         search = ''
                         while search != 'quit':
-                            search = input('Type anything to search or quit to exit.\n>')
+                            search = input('Type anything to search, empty to show everything or quit to exit.\n>')
                             os.system('cls')
                             if search == '':
                                 Get.Passwords()
@@ -398,25 +396,29 @@ class Window:
                         password = ''
                         status1 = 0
                         while status1 == 0:
-                            if accname > 3 and password > 7:
-                                answer1 = input('Add Account\nAccount Name: ' + accname + 'Password: ' + password + '\n |AccountName| |Password| |Continue| |Quit| \n>')
+                            if len(accname) >= 3 and len(password) >= 7:
+                                answer1 = input('Add Account\nName: ' + accname + '\nPassword: ' + password + '\n|Name| |Password| |Continue| |Quit| \n>')
                             else:
-                                answer1 = input('Add Account\nAccount Name: ' + accname + 'Password: ' + password + '\n |AccountName| |Password| |Quit| \n>')
+                                answer1 = input('Add Account\nName: ' + accname + '\nPassword: ' + password + '\n|Name| |Password| |Quit| \n>')
                             answer1 = answer1.lower()
 
                             match answer1:
-                                case 'accountname':
+                                case 'name':
                                     accname = Other.ask('name')
+                                    os.system('cls')
 
                                 case 'password':
                                     password = Other.ask('password')
+                                    os.system('cls')
 
                                 case 'continue':
-                                    if accname > 3 and password > 7:
-                                        Modify.List.newPassword(accname, password)
-                                        status1 = 1
-                                        time.sleep(2)
-                                        os.system('cls')
+                                    if len(accname) >= 3 and len(password) >= 7:
+                                        if Modify.List.newPassword(accname, password) == 'success':
+                                            status1 = 1
+                                            time.sleep(2)
+                                        else:
+                                            time.sleep(1)
+                                    os.system('cls')
 
                                 case 'quit':
                                     os.system('cls')
@@ -432,14 +434,17 @@ class Window:
                         os.system('cls')
                         while status1 == 0:
                             answer1 = input('What account you want to remove?\n>')
-                            if Modify.List.removePassword(answer1) == 'error':
-                                time.sleep(1)
-                                os.system('cls')
+                            if answer1 != 'quit':
+                                if Modify.List.removePassword(answer1) == 'error':
+                                    time.sleep(1)
+                                    os.system('cls')
+                                else:
+                                    time.sleep(2)
+                                    os.system('cls')
+                                    status1 = 1
                             else:
-                                time.sleep(2)
                                 os.system('cls')
                                 status1 = 1
-                        status = 1
 
                     case 'changepassword':
                         os.system('cls')
@@ -447,21 +452,23 @@ class Window:
                         password = ''
                         status1 = 0
                         while status1 == 0:
-                            if accname > 3 and password > 7:
-                                answer1 = input('Add Account\nAccount Name: ' + accname + 'Password: ' + password + '\n |AccountName| |Password| |Continue| |Quit| \n>')
+                            if len(accname) >= 3 and len(password) >= 7:
+                                answer1 = input('Change Password\nName: ' + accname + '\nPassword: ' + password + '\n|Name| |Password| |Continue| |Quit| \n>')
                             else:
-                                answer1 = input('Add Account\nAccount Name: ' + accname + 'Password: ' + password + '\n |AccountName| |Password| |Quit| \n>')
+                                answer1 = input('Change Password\nName: ' + accname + '\nPassword: ' + password + '\n|Name| |Password| |Quit| \n>')
                             answer1 = answer1.lower()
 
                             match answer1:
-                                case 'accountname':
+                                case 'name':
                                     accname = Other.ask('name')
+                                    os.system('cls')
 
                                 case 'password':
                                     password = Other.ask('password')
+                                    os.system('cls')
 
                                 case 'continue':
-                                    if accname > 3 and password > 7:
+                                    if len(accname) >= 3 and len(password) >= 7:
                                         if Modify.List.changePassword(accname, password) == 'error':
                                             time.sleep(1)
                                             os.system('cls')
@@ -489,76 +496,68 @@ class Window:
                         os.system('cls')
              
 class Other:
-    def login(
-        self,
-        username: str = ...,
-        password: str = ...
-        ):
-        global user_name, loginstatus
+    @staticmethod
+    def login(username: str, password: str):
+        global user_name, loginstatus, accountname
         if Check.StoredAccount(username, password):
             user_name = username
+            accountname = con.execute("SELECT name FROM account WHERE username = ?", [user_name]).fetchone()[0]
             print('Successfully logged in.')
-            loginstatus == True
+            loginstatus = True
             return 'success'
         else:
             print('Something went wrong, check your name or password.')
             return 'error'
 
-    def logOut(self):
-        global user_name, loginstatus
+    @staticmethod
+    def logOut():
+        global user_name, loginstatus, accountname
         if loginstatus == False:
             print("You have to be logged in to do that.")
         else:
+            print("You have been logged out.")
             user_name = ''
-            loginstatus == False
+            accountname = ''
+            loginstatus = False
 
+    @staticmethod
     def newRandomPass():
-        if loginstatus == False:
-            return print('You must be logged in to do that command.')
-        else:
-            newpass = Fernet.generate_key().decode('utf-8')
-            return newpass
+        newpass = Fernet.generate_key().decode('utf-8')
+        return newpass
 
-    def ask(
-        self,
-        type: str = ...
-        ):
-        answer = ''
+    @staticmethod
+    def ask(type: str):
+        answer1 = ''
         if type == 'username':
-            while len(answer) < 2:
+            while len(answer1) < 2:
                 os.system('cls')
-                answer = input('Type the username.\n>')
-                os.system('cls')
+                answer1 = input('Type the username.\n>')
 
-                if answer < 2:
-                    print('Username must have more than 2 characters.')
+                if len(answer1) < 2:
+                    print('Username must have atleast 2 characters.')
                     time.sleep(2)
-                    os.system('cls')
+                os.system('cls')
 
         if type == 'password':
-            while len(answer) < 7:
+            while len(answer1) < 7:
                 os.system('cls')
-                answer = input('Type the password.\n>')
-                os.system('cls')
+                answer1 = input('Type the password.\n>')
                 
-                if answer < 7:
-                    print('Password must have more than 7 characters.')
+                if len(answer1)  < 7:
+                    print('Password must have atleast 7 characters.')
                     time.sleep(2)
                     os.system('cls')
         
         if type == 'name':
-            while len(answer) < 2:
+            while len(answer1) < 2:
                 os.system('cls')
-                answer = input('Type the name.\n>')
-                os.system('cls')
+                answer1 = input('Type the name.\n>')
                 
-                if answer < 2:
-                    print('Name must have more than 2 characters.')
+                if len(answer1)  < 2:
+                    print('Name must have atleast 2 characters.')
                     time.sleep(2)
                     os.system('cls')
-        return answer
-   
-def Help():
-    print('Commands that exist: \n Register - Create a new account.\n Login - Log in an existing account.\n Logout - Log out from the account you loggedd in.\n Other - Other commands that might be useful.\n Passwords - Enter the passwords panel')
+        return answer1
 
-con.close()
+def Help():
+    print('Commands that exist: \n Register - Create a new account.\n Login - Log in an existing account.\n Logout - Log out from the account you loggedd in.\n Other - Other commands that might be useful.\n Passwords - Enter the passwords panel.\n Clear - Clears the console.')

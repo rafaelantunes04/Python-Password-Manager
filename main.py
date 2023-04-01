@@ -1,13 +1,14 @@
 from functions import *
-
-def loginWindow():
-    pass
-
 response = ''
+
 input('Welcome to PasswordManager done by RafaBacano, press enter to start.')
 os.system('cls')
 while response != 'quit':
-    response = input('Type Help for help\n>')
+    if loginstatus == False:
+        response = input('Type Help for help\n>')
+    else:
+        response = input('Hello, ' + accountname + ', type help for help.\n>')
+
     response = response.lower()
     if response == 'help':
         Help()
@@ -21,6 +22,9 @@ while response != 'quit':
         Window.other()
     if response == 'passwords':
         Window.passwords()
-        
-print('Goodbye')
-input()
+    if response == 'clear':
+        os.system('cls')
+
+con.close()
+os.system('cls')
+input('Goodbye')
